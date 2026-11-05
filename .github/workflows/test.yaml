@@ -1,0 +1,31 @@
+name: Test
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  test:
+    runs-on: ubuntu-22.04
+    steps:
+    - uses: actions/checkout@v5
+
+    - name: Check out go-yaml host
+      uses: actions/checkout@v5
+      with:
+        repository: yaml/go-yaml
+        ref: abc9fb0680a543ffa0c2fa38b1610bf75c81c302
+        path: repos/go-yaml
+
+    - name: Test sources, release helpers, and Go CLI integration
+      env:
+        GO_YAML_DIR: repos/go-yaml
+      run: make release-validate test-goyaml-cli release-archive

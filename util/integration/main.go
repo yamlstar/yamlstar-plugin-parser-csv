@@ -5,6 +5,7 @@ import (
 	"archive/zip"
 	"crypto/sha256"
 	"encoding/hex"
+	"flag"
 	"fmt"
 	"io/fs"
 	"os"
@@ -23,12 +24,20 @@ func main() {
 }
 
 func run() error {
+	goOnly := flag.Bool("go-yaml-only", false, "test go-yaml without a YAMLStar host")
+	flag.Parse()
 	root, err := os.Getwd()
 	if err != nil {
 		return err
 	}
 	hostRoot := filepath.Dir(filepath.Dir(root))
 	source := filepath.Join(hostRoot, "repos/go-yaml")
+	if override := os.Getenv("GO_YAML_DIR"); override != "" {
+		source, err = filepath.Abs(override)
+		if err != nil {
+			return err
+		}
+	}
 	if _, err := os.Stat(filepath.Join(source, "util/build-cli/main.go")); err != nil {
 		return fmt.Errorf("required go-yaml checkout: %w", err)
 	}
@@ -142,16 +151,20 @@ func run() error {
 		return err
 	}
 	yamlstar := os.Getenv("YAMLSTAR_CLI")
-	if yamlstar == "" {
-		yamlstar = filepath.Join(hostRoot, "cli/bin/yaml")
-	}
-	yamlstar, err = exec.LookPath(yamlstar)
-	if err != nil {
-		return fmt.Errorf("select a CSV-enabled YAMLStar with YAMLSTAR_CLI: %w", err)
-	}
-	yamlstar, err = filepath.Abs(yamlstar)
-	if err != nil {
-		return err
+	if *goOnly {
+		yamlstar = ""
+	} else {
+		if yamlstar == "" {
+			yamlstar = filepath.Join(hostRoot, "cli/bin/yaml")
+		}
+		yamlstar, err = exec.LookPath(yamlstar)
+		if err != nil {
+			return fmt.Errorf("select a CSV-enabled YAMLStar with YAMLSTAR_CLI: %w", err)
+		}
+		yamlstar, err = filepath.Abs(yamlstar)
+		if err != nil {
+			return err
+		}
 	}
 	tests := exec.Command(goBin, "test", "./goyaml", "-run", "^TestNativeHosts$", "-count=1", "-v")
 	tests.Env = append(os.Environ(),
@@ -161,6 +174,9 @@ func run() error {
 	tests.Stdout, tests.Stderr = os.Stdout, os.Stderr
 	if err := tests.Run(); err != nil {
 		return err
+	}
+	if *goOnly {
+		return nil
 	}
 	// Remember the executable only after it passes the shared CSV fixtures.
 	pathFile := filepath.Join(work, "yamlstar-path")

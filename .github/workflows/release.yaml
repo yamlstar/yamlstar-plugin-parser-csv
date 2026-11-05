@@ -1,0 +1,137 @@
+name: Release CSV Parser Plugin
+run-name: Release CSV ${{ inputs.version }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Stable version, for example 0.1.0
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: release-${{ inputs.version }}
+  cancel-in-progress: false
+
+env:
+  VERSION: ${{ inputs.version }}
+
+jobs:
+  verify:
+    runs-on: ubuntu-22.04
+    steps:
+    - name: Check out release tag
+      uses: actions/checkout@v5
+      with:
+        ref: ${{ inputs.version }}
+        fetch-depth: 0
+
+    - name: Verify release provenance
+      run: |
+        [[ $VERSION =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+        test "$GITHUB_REF" = "refs/tags/$VERSION"
+        test "$(git rev-parse "$VERSION^{commit}")" = "$(git rev-parse HEAD)"
+        test "$(git rev-parse "v$VERSION^{commit}")" = "$(git rev-parse HEAD)"
+
+    - name: Check out go-yaml host
+      uses: actions/checkout@v5
+      with:
+        repository: yaml/go-yaml
+        ref: abc9fb0680a543ffa0c2fa38b1610bf75c81c302
+        path: repos/go-yaml
+
+    - name: Validate release sources and Go package integration
+      env:
+        GO_YAML_DIR: repos/go-yaml
+      run: make release-validate test-goyaml-cli v="$VERSION"
+
+  build:
+    needs: verify
+    name: Build ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - platform: linux-x64
+          runner: ubuntu-22.04
+        - platform: linux-aarch64
+          runner: ubuntu-22.04-arm
+        - platform: macos-x64
+          runner: macos-15-intel
+        - platform: macos-arm64
+          runner: macos-15
+    runs-on: ${{ matrix.runner }}
+    steps:
+    - name: Check out release tag
+      uses: actions/checkout@v5
+      with:
+        ref: ${{ inputs.version }}
+
+    - name: Install archive tools on macOS
+      if: startsWith(matrix.platform, 'macos-')
+      run: |
+        brew list gnu-tar >/dev/null 2>&1 || brew install gnu-tar
+        brew list xz >/dev/null 2>&1 || brew install xz
+
+    - name: Build and ABI-test native archive
+      run: |
+        make release-archive RELEASE-PLATFORM="${{ matrix.platform }}" \
+          TAR="${{ startsWith(matrix.platform, 'macos-') && 'gtar' || 'tar' }}"
+
+    - name: Upload native archive
+      uses: actions/upload-artifact@v6
+      with:
+        name: release-${{ matrix.platform }}
+        path: dist/*.tar.xz
+        if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+    - name: Download native archives
+      uses: actions/download-artifact@v7
+      with:
+        pattern: release-*
+        path: release-output
+        merge-multiple: true
+
+    - name: Verify expected assets and create checksums
+      run: |
+        cd release-output
+        for platform in linux-x64 linux-aarch64 macos-x64 macos-arm64; do
+          test -f "yamlstar-plugin-parser-csv-$VERSION-$platform.tar.xz"
+        done
+        sha256sum -- *.tar.xz > SHA256SUMS
+
+    - name: Publish GitHub release
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        if state=$(gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" \
+            --json isDraft --jq .isDraft); then
+          if [[ $state == true ]]; then
+            gh release upload "$VERSION" release-output/* \
+              --repo "$GITHUB_REPOSITORY" --clobber
+            gh release edit "$VERSION" --repo "$GITHUB_REPOSITORY" \
+              --draft=false
+          else
+            mkdir previous-release
+            gh release download "$VERSION" --repo "$GITHUB_REPOSITORY" \
+              --pattern SHA256SUMS --dir previous-release
+            cmp release-output/SHA256SUMS previous-release/SHA256SUMS
+          fi
+        else
+          gh release create "$VERSION" release-output/* \
+            --repo "$GITHUB_REPOSITORY" --verify-tag \
+            --title "$VERSION" --generate-notes
+        fi

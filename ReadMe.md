@@ -141,6 +141,55 @@ JVM integration and automatic plugin installation are outside this version.
 YAMLStar's current JSON writer does not escape every control character.
 The plugin preserves those values in YAML output and parser events.
 
+## Releases
+
+Release `0.1.0` is prepared in the source metadata.
+Commit the release tooling before running a real release.
+Use a shell with Git publication and GitHub Actions write access.
+
+```bash
+make release d=1                  # Offline preview of the current version
+make release                     # Release the already-versioned source
+make release o=0.1.0 v=0.1.1 d=1 # Preview a version bump
+make release o=0.1.0 v=0.1.1     # Bump, validate, commit, tag, and release
+```
+
+Real releases require a clean checkout on `main`.
+Set `a=1` to release from another branch.
+The helper keeps `Makefile`, `Meta`, `plugin.edn`, and `parser/parser.go`
+in agreement and commits only those version files when a bump is needed.
+It runs the release checks before creating annotated `VERSION` and `vVERSION`
+tags at the same commit.
+Existing tags are never moved.
+Only the current branch and those two tags are published atomically.
+
+The GitHub workflow builds and ABI-tests native shared libraries for Linux
+x64 and ARM64, and macOS x64 and ARM64.
+Each `yamlstar-plugin-parser-csv-VERSION-PLATFORM.tar.xz` contains the library,
+ABI header, manifest, license, and ReadMe.
+The GitHub release uses the unprefixed tag and includes `SHA256SUMS`.
+The `v` tag publishes the Go module, including its go-yaml adapter.
+There are no Python wheels or PyPI releases.
+The helper waits for the exact workflow run, checks all release assets, and
+downloads the exact Go module version before reporting success.
+
+```bash
+make release-archive             # Build and ABI-test this host's archive
+make release-validate            # Run local release checks
+make test-goyaml-cli             # Check the generic external-package build
+make release-retry v=0.1.0       # Rerun failed jobs for the original tags
+make release-list                # Show release commands
+```
+
+Retries preserve both tags and the original release commit.
+If a release stops after committing the version bump but before starting a
+workflow, resume with `make release v=VERSION`, omitting `o`.
+For source changes after tagging, release a new version.
+The workflow can resume an incomplete draft release and does not overwrite
+assets in a published release.
+Set `GO_YAML_DIR` to a go-yaml checkout for standalone CLI integration tests.
+The release workflow uses its own pinned checkout under `repos/go-yaml`.
+
 ## License
 
 MIT License.

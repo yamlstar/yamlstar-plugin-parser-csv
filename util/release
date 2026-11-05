@@ -1,0 +1,325 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+action=${1:-list}
+old_version=${OLD_VERSION:-}
+new_version=${NEW_VERSION:-}
+dry_run=${YS_RELEASE_DRYRUN:-}
+perl=${PERL:?PERL must name the project-managed Perl}
+gh=${GH:-gh}
+go=${GO:-go}
+repository=yamlstar/yamlstar-plugin-parser-csv
+module=github.com/$repository
+version_files=(Makefile Meta plugin.edn parser/parser.go)
+
+die() {
+  printf 'ERROR: %s\n' "$*" >&2
+  exit 1
+}
+
+valid_version() {
+  [[ $1 =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] ||
+    die "Invalid stable release version: $1"
+}
+
+current_version() {
+  local version meta build parser
+  # shellcheck disable=SC2016
+  version=$("$perl" -ne 'print "$1\n" if /^ :version "([^"]+)"$/' plugin.edn)
+  # shellcheck disable=SC2016
+  meta=$("$perl" -ne 'print "$1\n" if /^version: (\S+)$/' Meta)
+  # shellcheck disable=SC2016
+  build=$("$perl" -ne 'print "$1\n" if /^VERSION := (\S+)$/' Makefile)
+  # shellcheck disable=SC2016
+  parser=$("$perl" -ne 'print "$1\n" if /^const Version = "([^"]+)"$/' parser/parser.go)
+  valid_version "$version"
+  [[ $version == "$meta" && $version == "$build" && $version == "$parser" ]] ||
+    die 'Version mismatch between Makefile, Meta, plugin.edn, and parser/parser.go'
+  printf '%s\n' "$version"
+}
+
+require_clean() {
+  [[ -z $(git status --porcelain) ]] || die 'Working tree is not clean'
+}
+
+require_origin() {
+  local origin
+  origin=$(git remote get-url origin)
+  case $origin in
+    "git@github.com:$repository"|"git@github.com:$repository.git"|\
+    "https://github.com/$repository"|"https://github.com/$repository.git"|\
+    "ssh://git@github.com/$repository"|"ssh://git@github.com/$repository.git") ;;
+    *) die "Origin must point to github.com/$repository" ;;
+  esac
+}
+
+require_tags() {
+  local tag commit
+  commit=$(git rev-parse HEAD)
+  for tag in "$new_version" "v$new_version"; do
+    [[ $(git rev-parse --verify "refs/tags/$tag^{commit}") == "$commit" ]] ||
+      die "Tag $tag must identify HEAD"
+  done
+}
+
+remote_commit() {
+  local tag=$1 records sha ref object='' peeled=''
+  records=$(git ls-remote --tags origin "refs/tags/$tag" "refs/tags/$tag^{}") ||
+    die 'Cannot inspect origin release tags'
+  while read -r sha ref; do
+    case $ref in
+      "refs/tags/$tag") object=$sha ;;
+      "refs/tags/$tag^{}") peeled=$sha ;;
+    esac
+  done <<< "$records"
+  printf '%s\n' "${peeled:-$object}"
+}
+
+check_tags() {
+  local tag commit target remote
+  commit=$(git rev-parse HEAD)
+  for tag in "$new_version" "v$new_version"; do
+    if target=$(git rev-parse --verify "refs/tags/$tag^{commit}" 2>/dev/null); then
+      [[ $target == "$commit" && $current == "$new_version" ]] ||
+        die "Tag $tag already exists; release tags are immutable"
+    fi
+    if [[ -z $dry_run ]]; then
+      remote=$(remote_commit "$tag")
+      [[ -z $remote || ( $remote == "$commit" && $current == "$new_version" ) ]] ||
+        die "Origin tag $tag already exists; release tags are immutable"
+    fi
+  done
+}
+
+sanity_check() {
+  local branch
+  require_origin
+  current=$(current_version)
+  valid_version "$new_version"
+  [[ -z $old_version || $old_version == "$current" ]] ||
+    die "Current version $current does not match old version $old_version"
+  branch=$(git branch --show-current)
+  [[ -n $branch ]] || die 'Cannot release from detached HEAD'
+  if [[ -z $dry_run ]]; then
+    [[ $branch == main || -n ${YS_RELEASE_ALLOW_BRANCH:-} ]] ||
+      die 'Releases require main; use a=1 to select another branch'
+    require_clean
+  fi
+  check_tags
+  printf 'Release version: %s -> %s\n' "$current" "$new_version"
+}
+
+version_bump() {
+  current=$(current_version)
+  valid_version "$new_version"
+  [[ -z $old_version || $old_version == "$current" ]] ||
+    die "Current version $current does not match old version $old_version"
+  if [[ $current == "$new_version" ]]; then
+    return
+  fi
+  if [[ -n $dry_run ]]; then
+    printf 'Would bump version from %s to %s\n' "$current" "$new_version"
+    return
+  fi
+  # The replacements use Perl captures and explicit environment values.
+  # shellcheck disable=SC2016
+  RELEASE_OLD=$current RELEASE_NEW=$new_version "$perl" -pi -e '
+    BEGIN { $old = $ENV{RELEASE_OLD}; $new = $ENV{RELEASE_NEW}; }
+    s/^VERSION := \Q$old\E$/VERSION := $new/;
+    s/^version: \Q$old\E$/version: $new/;
+    s/^ :version "\Q$old\E"$/ :version "$new"/;
+    s/^const Version = "\Q$old\E"$/const Version = "$new"/;
+  ' "${version_files[@]}"
+  [[ $(current_version) == "$new_version" ]] || die 'Incomplete version bump'
+}
+
+commit_version() {
+  local file exclusions=()
+  [[ $(current_version) == "$new_version" ]] || die 'Release version mismatch'
+  for file in "${version_files[@]}"; do
+    exclusions+=(":(exclude)$file")
+  done
+  [[ -z $(git status --porcelain -- . "${exclusions[@]}") ]] ||
+    die 'Changes outside the version files must be committed separately'
+  if [[ -z $(git status --porcelain -- "${version_files[@]}") ]]; then
+    return
+  fi
+  git add "${version_files[@]}"
+  git commit -m "Release CSV parser version $new_version" \
+    -m "Update build metadata and the parser manifest for version $new_version."
+}
+
+create_tags() {
+  current=$(current_version)
+  [[ $current == "$new_version" ]] || die 'Release version mismatch'
+  require_clean
+  check_tags
+  local tag commit
+  commit=$(git rev-parse HEAD)
+  for tag in "$new_version" "v$new_version"; do
+    if ! git rev-parse --verify "refs/tags/$tag" >/dev/null 2>&1; then
+      git tag -a "$tag" "$commit" -m "Release CSV parser plugin $new_version"
+    fi
+  done
+}
+
+verify_remote_tags() {
+  local tag expected
+  require_origin
+  expected=$(git rev-parse "refs/tags/$new_version^{commit}")
+  [[ $(git rev-parse "refs/tags/v$new_version^{commit}") == "$expected" ]] ||
+    die 'Native and Go module tags identify different commits'
+  for tag in "$new_version" "v$new_version"; do
+    [[ $(remote_commit "$tag") == "$expected" ]] ||
+      die "Origin tag $tag does not match the local release commit"
+  done
+}
+
+verify_publication() {
+  local names platform draft attempt
+  draft=$("$gh" release view "$new_version" --repo "$repository" \
+    --json isDraft --jq .isDraft)
+  [[ $draft == false ]] || die 'The GitHub release is still a draft'
+  names=$("$gh" release view "$new_version" --repo "$repository" \
+    --json assets --jq '.assets[].name')
+  for platform in linux-x64 linux-aarch64 macos-x64 macos-arm64; do
+    grep -Fxq "yamlstar-plugin-parser-csv-$new_version-$platform.tar.xz" \
+      <<< "$names" || die "Release is missing the $platform archive"
+  done
+  grep -Fxq SHA256SUMS <<< "$names" || die 'Release is missing SHA256SUMS'
+  mkdir -p .cache/release
+  for attempt in {1..6}; do
+    if GOPROXY=https://proxy.golang.org "$go" mod download -json \
+      "$module@v$new_version" > .cache/release/module.json; then
+      printf 'Verified native release %s and Go module v%s\n' \
+        "$new_version" "$new_version"
+      return
+    fi
+    if [[ $attempt != 6 ]]; then sleep 5; fi
+  done
+  die 'The exact Go module version could not be downloaded'
+}
+
+watch_run() {
+  local id=$1 state conclusion snapshot
+  printf 'Watching release workflow run %s\n' "$id"
+  while :; do
+    snapshot=$("$gh" run view "$id" --repo "$repository" \
+      --json status,conclusion --jq '.status + " " + (.conclusion // "")')
+    read -r state conclusion <<< "$snapshot"
+    if [[ $state == completed ]]; then
+      [[ $conclusion == success ]] || die "Release workflow finished: $conclusion"
+      verify_publication
+      return
+    fi
+    sleep 10
+  done
+}
+
+matching_runs() {
+  local commit=$1
+  "$gh" run list --repo "$repository" --workflow release.yaml \
+    --commit "$commit" --event workflow_dispatch --limit 20 \
+    --json databaseId,displayTitle \
+    --jq ".[] | select(.displayTitle == \"Release CSV $new_version\") | .databaseId"
+}
+
+build_github() {
+  local before after id commit attempt
+  require_tags
+  verify_remote_tags
+  commit=$(git rev-parse HEAD)
+  before=$(matching_runs "$commit")
+  "$gh" workflow run release.yaml --repo "$repository" \
+    --ref "$new_version" -f "version=$new_version"
+  for attempt in {1..20}; do
+    after=$(matching_runs "$commit")
+    while read -r id; do
+      if [[ -n $id ]] && ! grep -Fxq "$id" <<< "$before"; then
+        watch_run "$id"
+        return
+      fi
+    done <<< "$after"
+    sleep 1
+  done
+  die 'Could not identify the newly dispatched release workflow run'
+}
+
+retry_release() {
+  local id commit
+  verify_remote_tags
+  commit=$(git rev-parse "refs/tags/$new_version^{commit}")
+  id=$("$gh" run list --repo "$repository" --workflow release.yaml \
+    --commit "$commit" --event workflow_dispatch --status failure \
+    --limit 20 --json databaseId,displayTitle \
+    --jq ".[] | select(.displayTitle == \"Release CSV $new_version\") | .databaseId")
+  id=${id%%$'\n'*}
+  [[ -n $id ]] || die 'No failed release workflow matches these tags'
+  "$gh" run rerun "$id" --repo "$repository" --failed
+  watch_run "$id"
+}
+
+release() {
+  sanity_check
+  if [[ -n $dry_run ]]; then
+    version_bump
+    printf 'Would run release-validate, then commit version files if changed\n'
+    printf 'Would create annotated tags %s and v%s at the release commit\n' \
+      "$new_version" "$new_version"
+    printf 'Would publish only the current branch and these two tags atomically\n'
+    printf 'Would dispatch release.yaml and verify all archives and the Go module\n'
+    return
+  fi
+  version_bump
+  make release-validate
+  commit_version
+  create_tags
+  local branch
+  branch=$(git branch --show-current)
+  git push --atomic origin "HEAD:refs/heads/$branch" \
+    "refs/tags/$new_version" "refs/tags/v$new_version"
+  verify_remote_tags
+  build_github
+}
+
+case $action in
+  list)
+    cat <<'HELP'
+CSV Parser Plugin Release
+
+make release                         Release the current version
+make release o=0.1.0 v=0.1.1         Bump and release a new version
+make release d=1                     Preview offline without changing anything
+make release-archive                 Build and ABI-test this platform's archive
+make release-retry v=0.1.0           Rerun failed jobs for the original tags
+
+Releases require a clean checkout on main; a=1 allows another branch.
+Native archives use VERSION; Go modules use vVERSION at the same commit.
+Existing release tags are never moved.
+HELP
+    ;;
+  check)
+    current=$(current_version)
+    [[ -z $new_version || $new_version == "$current" ]] ||
+      die "Requested version $new_version does not match source version $current"
+    printf '%s\n' "$current"
+    ;;
+  release) release ;;
+  sanity-check) sanity_check ;;
+  version-bump) version_bump ;;
+  commit|tag|build-github|retry)
+    valid_version "$new_version"
+    if [[ -n $dry_run ]]; then
+      printf 'Would run release step %s for %s\n' "$action" "$new_version"
+    else
+      case $action in
+        commit) commit_version ;;
+        tag) create_tags ;;
+        build-github) build_github ;;
+        retry) retry_release ;;
+      esac
+    fi
+    ;;
+  *) die "Unknown release command: $action" ;;
+esac

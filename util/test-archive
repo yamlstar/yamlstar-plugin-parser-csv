@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+archive=${1:?Usage: test-archive ARCHIVE PLATFORM VERSION}
+platform=${2:?Usage: test-archive ARCHIVE PLATFORM VERSION}
+version=${3:?Usage: test-archive ARCHIVE PLATFORM VERSION}
+project_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+archive_dir=$(cd "$(dirname "$archive")" && pwd)
+archive="$archive_dir/$(basename "$archive")"
+release_name="yamlstar-plugin-parser-csv-$version-$platform"
+work_dir=$(mktemp -d)
+trap 'rm -rf "$work_dir"' EXIT
+
+tar -xf "$archive" -C "$work_dir"
+release_dir="$work_dir/$release_name"
+
+case $platform in
+  linux-*)
+    extension=so
+    link_flags=(-ldl)
+    ;;
+  macos-*)
+    extension=dylib
+    link_flags=()
+    ;;
+  *)
+    echo "Unsupported release platform: $platform" >&2
+    exit 1
+    ;;
+esac
+
+library_dir="$release_dir/lib"
+library="$library_dir/libyamlstar-plugin-parser-csv.$extension"
+manifest="$release_dir/share/yamlstar/plugins/parser-csv/plugin.edn"
+
+test -f "$library"
+test -f "$manifest"
+test -f "$release_dir/include/yamlstar/yamlstar_plugin.h"
+test -f "$release_dir/License"
+test -f "$release_dir/ReadMe.md"
+cmp "$project_dir/plugin.edn" "$manifest"
+
+read -r -a cc_command <<< "${CC:-cc}"
+"${cc_command[@]}" \
+  -Wall -Wextra -Werror \
+  -I"$project_dir/include" \
+  "-DPLUGIN_EXTENSION=\"$extension\"" \
+  "-DPLUGIN_VERSION=\"$version\"" \
+  "$project_dir/test/abi.c" \
+  "${link_flags[@]}" \
+  -o "$work_dir/abi-test"
+
+YAMLSTAR_LIBRARY_PATH=$library_dir "$work_dir/abi-test"
+echo "Release archive test passed: $(basename "$archive")"

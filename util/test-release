@@ -1,0 +1,267 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+release=$PWD/util/release
+project=$PWD
+perl=${PERL:?PERL must name the project-managed Perl}
+temporary=$(mktemp -d)
+trap 'rm -rf "$temporary"' EXIT
+export PERL=$perl
+export REAL_GIT
+REAL_GIT=$(command -v git)
+export RELEASE_TEST_LOG=$temporary/commands
+export RELEASE_TEST_STATE=$temporary/dispatched
+mkdir -p "$temporary/bin"
+
+# Publication tools are replaced with fixtures. No network writes occur.
+cat > "$temporary/bin/git" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'git: %s\n' "$*" >> "$RELEASE_TEST_LOG"
+if [[ $* == 'remote get-url origin' ]]; then
+  printf '%s\n' "${RELEASE_TEST_REMOTE:-git@github.com:yamlstar/yamlstar-plugin-parser-csv}"
+  exit
+fi
+if [[ $1 == push ]]; then
+  branch=$("$REAL_GIT" branch --show-current)
+  [[ $* == "push --atomic origin HEAD:refs/heads/$branch refs/tags/$NEW_VERSION refs/tags/v$NEW_VERSION" ]]
+  [[ -z ${RELEASE_TEST_PUSH_FAIL:-} ]] || exit 23
+  "$REAL_GIT" --git-dir="$RELEASE_TEST_ORIGIN" fetch -q "$PWD" \
+    "HEAD:refs/heads/$branch" \
+    "refs/tags/$NEW_VERSION:refs/tags/$NEW_VERSION" \
+    "refs/tags/v$NEW_VERSION:refs/tags/v$NEW_VERSION"
+  exit
+fi
+exec "$REAL_GIT" "$@"
+STUB
+
+cat > "$temporary/bin/make" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ $* == release-validate ]]
+printf 'make: %s\n' "$*" >> "$RELEASE_TEST_LOG"
+[[ -z ${RELEASE_TEST_VALIDATE_FAIL:-} ]] || exit 17
+STUB
+
+cat > "$temporary/bin/gh" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'gh: %s\n' "$*" >> "$RELEASE_TEST_LOG"
+case "$1 $2" in
+  'workflow run')
+    [[ -z ${RELEASE_TEST_DISPATCH_FAIL:-} ]] || exit 19
+    touch "$RELEASE_TEST_STATE"
+    ;;
+  'run list')
+    if [[ $* == *'--status failure'* ]]; then
+      printf '43\n'
+    elif [[ -f $RELEASE_TEST_STATE ]]; then
+      printf '42\n41\n'
+    else
+      printf '41\n'
+    fi
+    ;;
+  'run view')
+    printf 'completed %s\n' "${RELEASE_TEST_CONCLUSION:-success}"
+    ;;
+  'run rerun') ;;
+  'release view')
+    if [[ $* == *'--json isDraft'* ]]; then
+      printf 'false\n'
+    else
+      for platform in linux-x64 linux-aarch64 macos-x64 macos-arm64; do
+        [[ $platform != "${RELEASE_TEST_MISSING_PLATFORM:-}" ]] || continue
+        printf 'yamlstar-plugin-parser-csv-%s-%s.tar.xz\n' "$NEW_VERSION" "$platform"
+      done
+      printf 'SHA256SUMS\n'
+    fi
+    ;;
+  *) exit 90 ;;
+esac
+STUB
+
+cat > "$temporary/bin/go" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'go: %s\n' "$*" >> "$RELEASE_TEST_LOG"
+[[ $* == "mod download -json github.com/yamlstar/yamlstar-plugin-parser-csv@v$NEW_VERSION" ]]
+[[ -z ${RELEASE_TEST_GO_FAIL:-} ]] || exit 29
+printf '{"Version":"v%s"}\n' "$NEW_VERSION"
+STUB
+
+cat > "$temporary/bin/sleep" <<'STUB'
+#!/usr/bin/env bash
+exit 0
+STUB
+
+chmod +x "$temporary/bin/"*
+shellcheck "$temporary/bin/"*
+export PATH=$temporary/bin:$PATH
+export GH=$temporary/bin/gh
+export GO=$temporary/bin/go
+unset OLD_VERSION YS_RELEASE_DRYRUN YS_RELEASE_ALLOW_BRANCH
+
+fixture() {
+  local name=$1
+  unset RELEASE_TEST_PUSH_FAIL RELEASE_TEST_VALIDATE_FAIL
+  unset RELEASE_TEST_DISPATCH_FAIL RELEASE_TEST_CONCLUSION
+  unset RELEASE_TEST_MISSING_PLATFORM RELEASE_TEST_GO_FAIL
+  unset RELEASE_TEST_REMOTE
+  export NEW_VERSION=9.8.7
+  export RELEASE_TEST_ORIGIN=$temporary/$name/origin.git
+  mkdir -p "$temporary/$name/repo/parser"
+  cp "$project/Makefile" "$project/Meta" "$project/plugin.edn" \
+    "$temporary/$name/repo/"
+  cp "$project/parser/parser.go" "$temporary/$name/repo/parser/"
+  cd "$temporary/$name/repo"
+  "$REAL_GIT" init -q -b main
+  "$REAL_GIT" config user.name 'Release Tests'
+  "$REAL_GIT" config user.email release-tests@example.invalid
+  "$REAL_GIT" config commit.gpgsign false
+  "$REAL_GIT" config tag.gpgsign false
+  "$REAL_GIT" config core.hooksPath /dev/null
+  "$REAL_GIT" add .
+  "$REAL_GIT" commit -qm 'Create release test fixture' \
+    -m 'Provide isolated version files for release helper validation.'
+  "$REAL_GIT" init -q --bare "$RELEASE_TEST_ORIGIN"
+  "$REAL_GIT" remote add origin "$RELEASE_TEST_ORIGIN"
+  : > "$RELEASE_TEST_LOG"
+  rm -f "$RELEASE_TEST_STATE"
+}
+
+expect_failure() {
+  local message=$1
+  shift
+  if "$@" > "$temporary/failure.log" 2>&1; then
+    echo "Expected failure: $message" >&2
+    exit 1
+  fi
+  grep -Fq "$message" "$temporary/failure.log" || {
+    cat "$temporary/failure.log" >&2
+    exit 1
+  }
+}
+
+reject() {
+  if "$@" >/dev/null 2>&1; then
+    printf 'Unexpected command succeeded: %s\n' "$*" >&2
+    exit 1
+  fi
+}
+
+fixture dry-run
+YS_RELEASE_DRYRUN=1 bash "$release" release > "$temporary/preview"
+grep -Fq 'Would bump version' "$temporary/preview"
+[[ -z $("$REAL_GIT" status --porcelain) ]]
+[[ -z $("$REAL_GIT" tag -l) ]]
+reject grep -Eq '^(gh:|go:|git: (push|ls-remote))' "$RELEASE_TEST_LOG"
+for invalid in 01.2.3 v1.2.3 1.2.3-rc.1 1.2; do
+  expect_failure 'Invalid stable release version' \
+    env NEW_VERSION="$invalid" YS_RELEASE_DRYRUN=1 bash "$release" release
+done
+echo 'Offline dry run and version validation passed'
+
+fixture complete
+bash "$release" release > "$temporary/complete.log"
+[[ $(bash "$release" check) == "$NEW_VERSION" ]]
+for tag in "$NEW_VERSION" "v$NEW_VERSION"; do
+  [[ $("$REAL_GIT" cat-file -t "refs/tags/$tag") == tag ]]
+  [[ $("$REAL_GIT" rev-parse "$tag^{commit}") == $("$REAL_GIT" rev-parse HEAD) ]]
+done
+grep -Fq 'gh: run view 42 ' "$RELEASE_TEST_LOG"
+reject grep -Fq 'gh: run view 41 ' "$RELEASE_TEST_LOG"
+grep -Fq 'Verified native release 9.8.7 and Go module v9.8.7' "$temporary/complete.log"
+echo 'Complete release, annotated tags, run association, and publication checks passed'
+
+# Retrying an older tagged commit must not move its tags to a later HEAD.
+original=$("$REAL_GIT" rev-parse "$NEW_VERSION^{commit}")
+printf 'later\n' > later
+"$REAL_GIT" add later
+"$REAL_GIT" commit -qm 'Create a later test commit' \
+  -m 'Check retries preserve the original release commit.'
+: > "$RELEASE_TEST_LOG"
+bash "$release" retry > "$temporary/retry.log"
+[[ $("$REAL_GIT" rev-parse "$NEW_VERSION^{commit}") == "$original" ]]
+grep -Fq 'gh: run rerun 43 ' "$RELEASE_TEST_LOG"
+reject grep -Eq 'git: push|gh: workflow run' "$RELEASE_TEST_LOG"
+echo 'Retry preserves immutable release tags'
+
+fixture dirty
+printf '\n// Local work\n' >> parser/parser.go
+expect_failure 'Working tree is not clean' bash "$release" release
+
+fixture metadata
+"$perl" -pi -e 's/^const Version = .*/const Version = "0.0.0"/' parser/parser.go
+expect_failure 'Version mismatch' bash "$release" check
+
+fixture local-conflict
+"$REAL_GIT" tag "v$NEW_VERSION"
+expect_failure 'release tags are immutable' bash "$release" release
+reject "$REAL_GIT" rev-parse --verify "refs/tags/$NEW_VERSION"
+
+fixture remote-conflict
+"$REAL_GIT" tag "v$NEW_VERSION"
+"$REAL_GIT" --git-dir="$RELEASE_TEST_ORIGIN" fetch -q "$PWD" \
+  "refs/tags/v$NEW_VERSION:refs/tags/v$NEW_VERSION"
+"$REAL_GIT" tag -d "v$NEW_VERSION" >/dev/null
+expect_failure 'Origin tag' bash "$release" release
+[[ -z $("$REAL_GIT" status --porcelain) ]]
+
+fixture dirty-tag
+bash "$release" version-bump
+expect_failure 'Working tree is not clean' bash "$release" tag
+[[ -z $("$REAL_GIT" tag -l) ]]
+echo 'Dirty state, metadata mismatch, and conflicting tags are rejected'
+
+fixture wrong-origin
+export RELEASE_TEST_REMOTE=git@github.com:someone/another-plugin
+expect_failure 'Origin must point to github.com/yamlstar/yamlstar-plugin-parser-csv' \
+  bash "$release" release
+
+fixture branch
+"$REAL_GIT" switch -qc release-test
+expect_failure 'Releases require main' bash "$release" release
+YS_RELEASE_ALLOW_BRANCH=1 bash "$release" release > "$temporary/branch.log"
+
+fixture detached
+"$REAL_GIT" checkout -q --detach
+expect_failure 'Cannot release from detached HEAD' bash "$release" release
+
+fixture unrelated-changes
+bash "$release" version-bump
+printf 'local work\n' > unrelated
+"$REAL_GIT" add unrelated
+expect_failure 'Changes outside the version files' bash "$release" commit
+echo 'Branch policy and scoped version commits passed'
+
+fixture failed-validation
+export RELEASE_TEST_VALIDATE_FAIL=1
+expect_failure '' bash "$release" release
+[[ -z $("$REAL_GIT" tag -l) ]]
+reject grep -Eq 'git: push|gh: workflow run' "$RELEASE_TEST_LOG"
+
+fixture failed-publish
+export RELEASE_TEST_PUSH_FAIL=1
+expect_failure '' bash "$release" release
+reject grep -Fq 'gh: workflow run' "$RELEASE_TEST_LOG"
+
+fixture failed-dispatch
+export RELEASE_TEST_DISPATCH_FAIL=1
+expect_failure '' bash "$release" release
+reject grep -Fq 'go: mod download' "$RELEASE_TEST_LOG"
+
+fixture failed-workflow
+export RELEASE_TEST_CONCLUSION=failure
+expect_failure 'Release workflow finished: failure' bash "$release" release
+reject grep -Fq 'go: mod download' "$RELEASE_TEST_LOG"
+
+fixture incomplete-assets
+export RELEASE_TEST_MISSING_PLATFORM=macos-arm64
+expect_failure 'Release is missing the macos-arm64 archive' bash "$release" release
+
+fixture missing-module
+export RELEASE_TEST_GO_FAIL=1
+expect_failure 'exact Go module version could not be downloaded' bash "$release" release
+echo 'Validation, publication, workflow, asset, and module failures propagate'
+echo 'Release helper tests passed'
