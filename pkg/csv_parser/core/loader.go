@@ -194,6 +194,7 @@ func LoadNS() {
 	sym__PCT_ := lang.NewSymbolUnchecked("%")
 	sym__PLUS_contains_QMARK_ := lang.NewSymbolUnchecked("+contains?")
 	sym__PLUS_map := lang.NewSymbolUnchecked("+map")
+	sym__PLUS_mapv := lang.NewSymbolUnchecked("+mapv")
 	sym_ARGS := lang.NewSymbolUnchecked("ARGS")
 	sym_ARGV := lang.NewSymbolUnchecked("ARGV")
 	sym_C := lang.NewSymbolUnchecked("C")
@@ -213,10 +214,10 @@ func LoadNS() {
 	sym_YYY := lang.NewSymbolUnchecked("YYY")
 	sym_ZZZ := lang.NewSymbolUnchecked("ZZZ")
 	sym__ := lang.NewSymbolUnchecked("_")
+	sym_add_PLUS_ := lang.NewSymbolUnchecked("add+")
 	sym_boolean_QMARK_ := lang.NewSymbolUnchecked("boolean?")
 	sym_clojure_DOT_core := lang.NewSymbolUnchecked("clojure.core")
 	sym_collection_DASH_events := lang.NewSymbolUnchecked("collection-events")
-	sym_concat := lang.NewSymbolUnchecked("concat")
 	sym_condf := lang.NewSymbolUnchecked("condf")
 	sym_config := lang.NewSymbolUnchecked("config")
 	sym_csv_DASH_parser_DOT_core := lang.NewSymbolUnchecked("csv-parser.core")
@@ -239,10 +240,8 @@ func LoadNS() {
 	sym_kind := lang.NewSymbolUnchecked("kind")
 	sym_load := lang.NewSymbolUnchecked("load")
 	sym_load_DASH_file := lang.NewSymbolUnchecked("load-file")
-	sym_map := lang.NewSymbolUnchecked("map")
 	sym_mapcat := lang.NewSymbolUnchecked("mapcat")
 	sym_mapping_DASH_events := lang.NewSymbolUnchecked("mapping-events")
-	sym_mapv := lang.NewSymbolUnchecked("mapv")
 	sym_message := lang.NewSymbolUnchecked("message")
 	sym_not_EQ_ := lang.NewSymbolUnchecked("not=")
 	sym_parse := lang.NewSymbolUnchecked("parse")
@@ -257,6 +256,7 @@ func LoadNS() {
 	sym_select_DASH_format := lang.NewSymbolUnchecked("select-format")
 	sym_str := lang.NewSymbolUnchecked("str")
 	sym_text := lang.NewSymbolUnchecked("text")
+	sym_truey_QMARK_ := lang.NewSymbolUnchecked("truey?")
 	sym_use := lang.NewSymbolUnchecked("use")
 	sym_validate_DASH_header := lang.NewSymbolUnchecked("validate-header")
 	sym_value := lang.NewSymbolUnchecked("value")
@@ -284,8 +284,6 @@ func LoadNS() {
 	builtin_rune := lang.Builtins["rune"]
 	// var clojure.core/boolean?
 	var_clojure_DOT_core_boolean_QMARK_ := lang.InternVarName(sym_clojure_DOT_core, sym_boolean_QMARK_)
-	// var clojure.core/concat
-	var_clojure_DOT_core_concat := lang.InternVarName(sym_clojure_DOT_core, sym_concat)
 	// var clojure.core/distinct
 	var_clojure_DOT_core_distinct := lang.InternVarName(sym_clojure_DOT_core, sym_distinct)
 	// var clojure.core/ex-info
@@ -294,12 +292,8 @@ func LoadNS() {
 	var_clojure_DOT_core_interleave := lang.InternVarName(sym_clojure_DOT_core, sym_interleave)
 	// var clojure.core/keys
 	var_clojure_DOT_core_keys := lang.InternVarName(sym_clojure_DOT_core, sym_keys)
-	// var clojure.core/map
-	var_clojure_DOT_core_map := lang.InternVarName(sym_clojure_DOT_core, sym_map)
 	// var clojure.core/mapcat
 	var_clojure_DOT_core_mapcat := lang.InternVarName(sym_clojure_DOT_core, sym_mapcat)
-	// var clojure.core/mapv
-	var_clojure_DOT_core_mapv := lang.InternVarName(sym_clojure_DOT_core, sym_mapv)
 	// var clojure.core/not=
 	var_clojure_DOT_core_not_EQ_ := lang.InternVarName(sym_clojure_DOT_core, sym_not_EQ_)
 	// var clojure.core/pr-str
@@ -336,10 +330,14 @@ func LoadNS() {
 	var_ys_DOT_v0_DOT_dwim__PLUS_contains_QMARK_ := lang.InternVarName(sym_ys_DOT_v0_DOT_dwim, sym__PLUS_contains_QMARK_)
 	// var ys.v0.dwim/+map
 	var_ys_DOT_v0_DOT_dwim__PLUS_map := lang.InternVarName(sym_ys_DOT_v0_DOT_dwim, sym__PLUS_map)
+	// var ys.v0.dwim/+mapv
+	var_ys_DOT_v0_DOT_dwim__PLUS_mapv := lang.InternVarName(sym_ys_DOT_v0_DOT_dwim, sym__PLUS_mapv)
 	// var ys.v0.std/C
 	var_ys_DOT_v0_DOT_std_C := lang.InternVarName(sym_ys_DOT_v0_DOT_std, sym_C)
 	// var ys.v0.std/%
 	var_ys_DOT_v0_DOT_std__PCT_ := lang.InternVarName(sym_ys_DOT_v0_DOT_std, sym__PCT_)
+	// var ys.v0.std/add+
+	var_ys_DOT_v0_DOT_std_add_PLUS_ := lang.InternVarName(sym_ys_DOT_v0_DOT_std, sym_add_PLUS_)
 	// var ys.v0.std/get+
 	var_ys_DOT_v0_DOT_std_get_PLUS_ := lang.InternVarName(sym_ys_DOT_v0_DOT_std, sym_get_PLUS_)
 	// var ys.v0.std/gt
@@ -350,7 +348,9 @@ func LoadNS() {
 	var_ys_DOT_v0_DOT_std_in_QMARK_ := lang.InternVarName(sym_ys_DOT_v0_DOT_std, sym_in_QMARK_)
 	// var ys.v0.std/put
 	var_ys_DOT_v0_DOT_std_put := lang.InternVarName(sym_ys_DOT_v0_DOT_std, sym_put)
-	aotExternalFn0 := aotLinkFn3(var_clojure_DOT_core_concat)
+	// var ys.v0.std/truey?
+	var_ys_DOT_v0_DOT_std_truey_QMARK_ := lang.InternVarName(sym_ys_DOT_v0_DOT_std, sym_truey_QMARK_)
+	aotExternalFn0 := aotLinkFn3(var_ys_DOT_v0_DOT_std_add_PLUS_)
 	aotExternalFn1 := aotLinkFn3(var_ys_DOT_v0_DOT_std_put)
 	aotExternalFn10 := aotLinkFn2(var_ys_DOT_v0_DOT_std_in_QMARK_)
 	aotExternalFn12 := aotLinkFn2(var_clojure_DOT_core_not_EQ_)
@@ -361,9 +361,9 @@ func LoadNS() {
 	aotExternalFn17 := aotLinkFn2(var_clojure_DOT_core_interleave)
 	aotExternalFn18 := aotLinkFn2(var_ys_DOT_v0_DOT_std_get_PLUS_)
 	aotExternalFn2 := aotLinkFn2(var_clojure_DOT_core_str)
-	aotExternalFn20 := aotLinkFn2(var_clojure_DOT_core_mapv)
-	aotExternalFn21 := aotLinkFn2(var_clojure_DOT_core_mapcat)
-	aotExternalFn22 := aotLinkFn2(var_clojure_DOT_core_map)
+	aotExternalFn20 := aotLinkFn2(var_ys_DOT_v0_DOT_dwim__PLUS_mapv)
+	aotExternalFn21 := aotLinkFn1(var_ys_DOT_v0_DOT_std_truey_QMARK_)
+	aotExternalFn22 := aotLinkFn2(var_clojure_DOT_core_mapcat)
 	aotExternalFn23 := aotLinkFn1(var_clojure_DOT_core_vec)
 	aotExternalFn25 := aotLinkFn2(var_clojure_DOT_core_remove)
 	aotExternalFn26 := aotLinkFn1(var_clojure_DOT_core_keys)
@@ -563,14 +563,18 @@ func LoadNS() {
 	var closed0 any
 	var closed1 any
 	var closed2 any
+	var closed3 any
 	{
 		closed0 = lang.NewSet()
 	}
 	{
-		closed1 = lang.NewVector(kw_format, kw_header)
+		closed1 = lang.NewVector(lang.NewChar(44), lang.NewChar(9))
 	}
 	{
-		closed2 = lang.NewVector("csv", "tsv", "auto")
+		closed2 = lang.NewVector(kw_format, kw_header)
+	}
+	{
+		closed3 = lang.NewVector("csv", "tsv", "auto")
 	}
 	// collection-events
 	{
@@ -662,72 +666,68 @@ func LoadNS() {
 									continue
 								} else {
 									var tmp30 any
-									tmp31 := aotExternalFn7(int64(10))
-									tmp32 := lang.Equals(v14, tmp31)
-									if tmp32 {
-										var tmp33 any
+									tmp31 := lang.Equals(v14, lang.NewChar(10))
+									if tmp31 {
+										var tmp32 any
 										if lang.IsTruthy(v7) {
-											tmp34 := aotDirectFn8(v8)
-											tmp33 = tmp34
+											tmp33 := aotDirectFn8(v8)
+											tmp32 = tmp33
 										} else {
-											tmp36 := aotExternalFn8(v5)
-											var tmp35 any = tmp36
+											tmp35 := aotExternalFn8(v5)
+											var tmp34 any = tmp35
+											var tmp36 any = false
 											var tmp37 any = false
-											var tmp38 any = false
-											var tmp39 any = v8
-											v5 = tmp35
-											v6 = tmp37
-											v7 = tmp38
-											v8 = tmp39
+											var tmp38 any = v8
+											v5 = tmp34
+											v6 = tmp36
+											v7 = tmp37
+											v8 = tmp38
 											continue
 										}
-										tmp30 = tmp33
+										tmp30 = tmp32
 									} else {
-										var tmp40 any
-										tmp41 := aotExternalFn7(int64(44))
-										tmp42 := aotExternalFn7(int64(9))
-										tmp43 := lang.NewVector(tmp41, tmp42)
-										tmp44 := aotExternalFn10(v14, tmp43)
-										if lang.IsTruthy(tmp44) {
-											tmp46 := aotExternalFn8(v5)
+										var tmp39 any
+										tmp40 := aotExternalFn10(v14, closed1)
+										if lang.IsTruthy(tmp40) {
+											tmp42 := aotExternalFn8(v5)
+											var tmp41 any = tmp42
+											var tmp43 any = false
+											var tmp44 any = true
+											tmp46 := lang.ConjAny(v8, v14)
 											var tmp45 any = tmp46
-											var tmp47 any = false
-											var tmp48 any = true
-											tmp50 := lang.ConjAny(v8, v14)
-											var tmp49 any = tmp50
-											v5 = tmp45
-											v6 = tmp47
-											v7 = tmp48
-											v8 = tmp49
+											v5 = tmp41
+											v6 = tmp43
+											v7 = tmp44
+											v8 = tmp45
 											continue
 										} else {
-											tmp52 := aotExternalFn8(v5)
-											var tmp51 any = tmp52
-											var tmp53 any = false
-											var tmp55 any
+											tmp48 := aotExternalFn8(v5)
+											var tmp47 any = tmp48
+											var tmp49 any = false
+											var tmp51 any
 											{ // let
 												// let binding "or__0__auto__"
-												var v56 any = v7
-												_ = v56
-												var tmp57 any
-												if lang.IsTruthy(v56) {
-													tmp57 = v56
+												var v52 any = v7
+												_ = v52
+												var tmp53 any
+												if lang.IsTruthy(v52) {
+													tmp53 = v52
 												} else {
-													tmp58 := aotExternalFn7(int64(13))
-													tmp59 := aotExternalFn12(v14, tmp58)
-													tmp57 = tmp59
+													tmp54 := aotExternalFn7(int64(13))
+													tmp55 := aotExternalFn12(v14, tmp54)
+													tmp53 = tmp55
 												}
-												tmp55 = tmp57
+												tmp51 = tmp53
 											} // end let
-											var tmp54 any = tmp55
-											var tmp56 any = v8
-											v5 = tmp51
-											v6 = tmp53
-											v7 = tmp54
-											v8 = tmp56
+											var tmp50 any = tmp51
+											var tmp52 any = v8
+											v5 = tmp47
+											v6 = tmp49
+											v7 = tmp50
+											v8 = tmp52
 											continue
 										}
-										tmp30 = tmp40
+										tmp30 = tmp39
 									}
 									tmp24 = tmp30
 								}
@@ -821,7 +821,7 @@ func LoadNS() {
 							tmp12 := runtime.RT.NthDefault(v11, lang.IntCast(int64(0)), nil)
 							var v13 any = tmp12
 							_ = v13
-							tmp14 := aotExternalFn10(v13, closed1)
+							tmp14 := aotExternalFn10(v13, closed2)
 							tmp10 = tmp14
 						} // end let
 						return tmp10
@@ -866,7 +866,7 @@ func LoadNS() {
 					var v24 any = tmp21
 					_ = v24
 					var tmp25 any
-					tmp26 := aotExternalFn10(v24, closed2)
+					tmp26 := aotExternalFn10(v24, closed3)
 					if lang.IsTruthy(tmp26) {
 					} else {
 						tmp27 := aotDirectFn3("format must be csv, tsv, or auto")
@@ -926,9 +926,8 @@ func LoadNS() {
 			}
 			_ = tmp3
 			var tmp7 any
-			tmp8 := aotExternalFn7(int64(9))
-			tmp9 := aotExternalFn33(v2, tmp8)
-			if lang.IsTruthy(tmp9) {
+			tmp8 := aotExternalFn33(v2, lang.NewChar(9))
+			if lang.IsTruthy(tmp8) {
 				tmp7 = "tsv"
 			} else {
 				tmp7 = "csv"
@@ -1040,9 +1039,9 @@ func LoadNS() {
 				var tmp15 any
 				tmp16 := lang.Equals(v14, "tsv")
 				if tmp16 {
-					tmp15 = int64(9)
+					tmp15 = lang.NewChar(9)
 				} else {
-					tmp15 = int64(44)
+					tmp15 = lang.NewChar(44)
 				}
 				var v17 any = tmp15
 				_ = v17
@@ -1109,7 +1108,7 @@ func LoadNS() {
 					{ // let
 						// let binding "rows"
 						tmp30 := checkDerefVar(var_clojure_DOT_core_vec)
-						tmp31 := aotExternalFn20(tmp30, v25)
+						tmp31 := aotExternalFn20(v25, tmp30)
 						var v32 any = tmp31
 						_ = v32
 						// let binding "header"
@@ -1124,7 +1123,7 @@ func LoadNS() {
 							_ = v37
 							var tmp38 any
 							if lang.IsTruthy(v37) {
-								tmp39 := lang.Seq(v32)
+								tmp39 := aotExternalFn21(v32)
 								tmp38 = tmp39
 							} else {
 								tmp38 = v37
@@ -1162,13 +1161,13 @@ func LoadNS() {
 									tmp45 = tmp47
 								} else {
 									tmp48 := checkDerefVar(var_csv_DASH_parser_DOT_core_scalar_DASH_event)
-									tmp49 := aotExternalFn22(tmp48, v44)
+									tmp49 := aotExternalFn16(v44, tmp48)
 									tmp50 := aotDirectFn0("sequence", tmp49)
 									tmp45 = tmp50
 								}
 								return tmp45
 							})
-							tmp44 := aotExternalFn21(tmp43, v42)
+							tmp44 := aotExternalFn22(tmp43, v42)
 							var v45 any = tmp44
 							_ = v45
 							// let binding "prefix"

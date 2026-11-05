@@ -5,14 +5,15 @@ defn parse(reader text config environment):
   options =: parse-options(config environment)
   format =: options.format
   format :if (format == 'auto') =: detect-format(text)
-  separator =: (format == 'tsv').if(9 44)
-  set!: (. reader Comma) go/rune(separator)
+  separator =:
+    if format == 'tsv': \\tab \\,
+  set!: (. reader Comma) separator:go/rune
   rows error =: (. reader ReadAll)
   when error:
     throw: error
-  rows =: mapv(vec rows)
+  rows =: rows.mapv(vec)
   header =: options.header
-  when header && rows:seq:
+  when header && rows.?:
     validate-header: rows.0
   records =: header.if(rows:rest rows)
   body =:
@@ -20,10 +21,10 @@ defn parse(reader text config environment):
       fn(row):
         if header:
           mapping-events: rows.0 row
-          collection-events 'sequence': map(scalar-event row)
+          collection-events 'sequence': row.map(scalar-event)
   prefix =: :[event('stream_start') event('document_start')]
   suffix =: :[event('document_end') event('stream_end')]
-  vec: concat(prefix collection-events('sequence' body) suffix)
+  vec: prefix + collection-events('sequence' body) + suffix
 
 defn parse-options(config environment):
   when-not config:map?:
@@ -31,14 +32,16 @@ defn parse-options(config environment):
   unknown =: remove(\(_.in?([:format :header])) config:keys)
   when unknown:seq:
     fail: "unknown configuration keys $pr-str(unknown)"
-  environment :if nil?(environment) =: 'auto'
+  environment :if environment:nil? =: 'auto'
   format =: config.contains?(:format).if(config.format environment)
   when-not format.in?(qw(csv tsv auto)):
     fail: 'format must be csv, tsv, or auto'
   header =: config.contains?(:header).if(config.header true)
   when-not header:boolean?:
     fail: 'header must be a boolean'
-  =>: :{:format format :header header}
+  =>:::
+    :format: format
+    :header: header
 
 defn- detect-format(text):
   loop chars text:seq, quoted false, started false, found \{}:
@@ -51,11 +54,11 @@ defn- detect-format(text):
             recur: chars:rest, quoted:not, true, found
           quoted:
             recur: chars:rest, quoted, true, found
-          c == C(10):
+          c == \\newline:
             if started:
               select-format: found
               recur: chars:rest, false, false, found
-          c.in?([C(44) C(9)]):
+          c.in?([\\, \\tab]):
             recur: chars:rest, false, true, found.conj(c)
           else:
             recur: chars:rest, false, (started || (c != C(13))), found
@@ -63,7 +66,7 @@ defn- detect-format(text):
 defn- select-format(found):
   when found.# > 1:
     fail: 'ambiguous delimiter; set format to csv or tsv'
-  found.has?(C(9)): .if('tsv' 'csv')
+  found.has?(\\tab): .if('tsv' 'csv')
 
 defn- validate-header(header):
   when header.has?(''):
@@ -76,10 +79,9 @@ defn- mapping-events(header row):
   collection-events 'mapping': fields
 
 defn- collection-events(kind items):
-  concat:
-    +[event("${kind}_start").put(:flow false)]
-    items
-    [event("${kind}_end")]
+  +[event("${kind}_start").put(:flow false)] +
+  items +
+  [event("${kind}_end")]
 
 defn- scalar-event(value)::
   :event: scalar

@@ -21,14 +21,14 @@
    format
    (if (= format "auto") (detect-format text) format)
    separator
-   (if (= format "tsv") 9 44)]
+   (if (= format "tsv") \tab \,)]
   (set! (. reader Comma) (go/rune separator))
   (let
    [[rows error] (. reader ReadAll)]
    (when error (throw error))
    (let
-    [rows (mapv vec rows) header (get+ options (quote header))]
-    (when (and header (seq rows)) (validate-header (get+ rows 0)))
+    [rows (+mapv rows vec) header (get+ options (quote header))]
+    (when (and header (truey? rows)) (validate-header (get+ rows 0)))
     (let
      [records
       (if header (rest rows) rows)
@@ -39,13 +39,13 @@
         (if
          header
          (mapping-events (get+ rows 0) row)
-         (collection-events "sequence" (map scalar-event row))))
+         (collection-events "sequence" (+map row scalar-event))))
        records)
       prefix
       [(event "stream_start") (event "document_start")]
       suffix
       [(event "document_end") (event "stream_end")]]
-     (vec (concat prefix (collection-events "sequence" body) suffix)))))))
+     (vec (add+ prefix (collection-events "sequence" body) suffix)))))))
 (defn
  parse-options
  [config environment]
@@ -88,12 +88,12 @@
       (recur (rest chars) (not quoted) true found)
       quoted
       (recur (rest chars) quoted true found)
-      (= c (C 10))
+      (= c \newline)
       (if
        started
        (select-format found)
        (recur (rest chars) false false found))
-      (in? c [(C 44) (C 9)])
+      (in? c [\, \tab])
       (recur (rest chars) false true (conj found c))
       :else
       (recur (rest chars) false (or started (not= c (C 13))) found)))))))
@@ -103,7 +103,7 @@
  (when
   (gt (count found) 1)
   (fail "ambiguous delimiter; set format to csv or tsv"))
- (if (has? found (C 9)) "tsv" "csv"))
+ (if (has? found \tab) "tsv" "csv"))
 (defn-
  validate-header
  [header]
@@ -120,7 +120,7 @@
 (defn-
  collection-events
  [kind items]
- (concat
+ (add+
   [(put (event (str kind "_start")) :flow false)]
   items
   [(event (str kind "_end"))]))
