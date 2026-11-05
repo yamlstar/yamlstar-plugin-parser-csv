@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+cd "$root"
+goyaml=${GO_YAML_CLI:-$root/.cache/integration/source/go-yaml}
+yamlstar=${YAMLSTAR_CLI:-$root/../../cli/bin/yaml}
+export YAMLSTAR_LIBRARY_PATH=$root/lib
+unset YAMLSTAR_CSV_FORMAT
+
+for binary in "$goyaml" "$yamlstar"; do
+  if [[ ! -x $binary ]]; then
+    echo "Missing demo executable: $binary" >&2
+    echo 'Build YAMLStar with make cli, then run make test-integration here.' >&2
+    exit 1
+  fi
+done
+
+run() {
+  printf '\n$'
+  local argument
+  for argument in "$@"; do
+    case $argument in
+      "$goyaml") argument=go-yaml ;;
+      "$yamlstar") argument=yaml ;;
+    esac
+    printf ' %q' "$argument"
+  done
+  printf '\n'
+  "$@"
+}
+
+run cat src/csv_parser/core.ys
+run cat example/services.csv
+run "$goyaml" --plugin=yaml-parser=csv -y example/services.csv
+run "$goyaml" --plugin=yaml-parser=csv -j example/services.csv
+run "$yamlstar" --plugin=yaml-parser=csv --no-install -y example/services.csv
+run "$yamlstar" --plugin=yaml-parser=csv --no-install -j example/services.tsv
+run env YAMLSTAR_CSV_FORMAT=tsv \
+  "$goyaml" --plugin=yaml-parser=csv -j example/services.tsv
+run "$goyaml" --config=example/rows.yaml -j example/services.csv

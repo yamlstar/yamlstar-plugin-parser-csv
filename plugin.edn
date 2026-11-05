@@ -1,0 +1,6 @@
+{:abi 2
+ :api "yaml-parser"
+ :kind "event-source"
+ :name "csv"
+ :version "0.1.0"
+ :event-format "yamlstar-events-edn-v1"}
