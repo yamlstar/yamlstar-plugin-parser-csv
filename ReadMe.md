@@ -106,8 +106,24 @@ source, and builds its CLI through `PLUGIN-PACKAGE` using a temporary local
 Go module proxy.
 It tests the same fixtures through both native CLIs.
 The source go-yaml checkout and its executable are left untouched.
-The resulting demo executable is `.cache/integration/source/go-yaml`.
-Set `YAMLSTAR_CLI` to override the default `../../cli/bin/yaml`.
+The resulting go-yaml executable is `.cache/integration/source/go-yaml`.
+The integration helper defaults `YAMLSTAR_CLI` to `../../cli/bin/yaml`.
+
+After successful integration tests, the helper records the tested YAMLStar
+executable in `.cache/integration/yamlstar-path`.
+`make demo` uses that executable, independently of the checkout layout.
+If no tested executable has been recorded, it uses `yaml` from `PATH`.
+Set `YAMLSTAR_CLI` to override either selection.
+It uses the staged go-yaml executable above unless `GO_YAML_CLI` is set.
+Both overrides accept an executable path or a command name on `PATH`.
+Both executables need CSV plugin support.
+The demo checks YAMLStar's CSV support before printing the demonstrations.
+An older installed YAMLStar may lack the CSV registration even when its
+version number matches a development build.
+
+```bash
+YAMLSTAR_CLI=/path/to/yaml GO_YAML_CLI=/path/to/go-yaml make demo
+```
 
 To use the shared library directly from the workspace:
 

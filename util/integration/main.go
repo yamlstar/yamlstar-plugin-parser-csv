@@ -145,8 +145,13 @@ func run() error {
 	if yamlstar == "" {
 		yamlstar = filepath.Join(hostRoot, "cli/bin/yaml")
 	}
-	if _, err := os.Stat(yamlstar); err != nil {
-		return fmt.Errorf("build YAMLStar with make cli first: %w", err)
+	yamlstar, err = exec.LookPath(yamlstar)
+	if err != nil {
+		return fmt.Errorf("select a CSV-enabled YAMLStar with YAMLSTAR_CLI: %w", err)
+	}
+	yamlstar, err = filepath.Abs(yamlstar)
+	if err != nil {
+		return err
 	}
 	tests := exec.Command(goBin, "test", "./goyaml", "-run", "^TestNativeHosts$", "-count=1", "-v")
 	tests.Env = append(os.Environ(),
@@ -154,5 +159,13 @@ func run() error {
 		"YAMLSTAR_CLI="+yamlstar,
 		"YAMLSTAR_LIBRARY_PATH="+filepath.Join(root, "lib"))
 	tests.Stdout, tests.Stderr = os.Stdout, os.Stderr
-	return tests.Run()
+	if err := tests.Run(); err != nil {
+		return err
+	}
+	// Remember the executable only after it passes the shared CSV fixtures.
+	pathFile := filepath.Join(work, "yamlstar-path")
+	if err := os.WriteFile(pathFile+".tmp", []byte(yamlstar+"\n"), 0644); err != nil {
+		return err
+	}
+	return os.Rename(pathFile+".tmp", pathFile)
 }

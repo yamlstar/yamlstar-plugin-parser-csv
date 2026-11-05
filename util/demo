@@ -5,17 +5,28 @@ set -euo pipefail
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$root"
 goyaml=${GO_YAML_CLI:-$root/.cache/integration/source/go-yaml}
-yamlstar=${YAMLSTAR_CLI:-$root/../../cli/bin/yaml}
+yamlstar=${YAMLSTAR_CLI:-yaml}
+if [[ -z ${YAMLSTAR_CLI:-} && -f $root/.cache/integration/yamlstar-path ]]; then
+  IFS= read -r yamlstar < "$root/.cache/integration/yamlstar-path"
+fi
 export YAMLSTAR_LIBRARY_PATH=$root/lib
 unset YAMLSTAR_CSV_FORMAT
 
 for binary in "$goyaml" "$yamlstar"; do
-  if [[ ! -x $binary ]]; then
+  if ! command -v "$binary" >/dev/null 2>&1; then
     echo "Missing demo executable: $binary" >&2
-    echo 'Build YAMLStar with make cli, then run make test-integration here.' >&2
+    echo 'Set GO_YAML_CLI and YAMLSTAR_CLI to the demo executables.' >&2
     exit 1
   fi
 done
+
+if ! output=$("$yamlstar" --plugin=yaml-parser=csv --no-install -j \
+  example/services.csv 2>&1); then
+  echo "YAMLStar CSV check failed: $(command -v "$yamlstar")" >&2
+  printf '%s\n' "$output" >&2
+  echo 'Set YAMLSTAR_CLI to a CSV-enabled build, then run make test-integration.' >&2
+  exit 1
+fi
 
 run() {
   printf '\n$'
